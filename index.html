@@ -1,338 +1,169 @@
+
+1000103348.jpg
+I am usesing safepal wallet but showing this error
+
+Done. I made the corrected index.html.
+
+Download the fixed index.html
+
+What I fixed
+SafePal support: uses window.safepalProvider, which is SafePal's documented EVM provider. 
+
+ethers is not defined: changed the browser library to the verified Ethers 6.15 UMD build from cdnjs, with a jsDelivr fallback. 
+
+Celo network switching/add-network support
+
+Ethereum network switching for redemption
+
+Keeps your existing ETHIX/Wormhole addresses
+
+Keeps the Celo → Ethereum WTT flow
+
+Keeps automatic VAA detection
+
+Keeps Ethereum completeTransfer
+
+No seed phrase/private-key input
+
+The Wormhole addresses in the file match the current official mainnet WTT documentation. 
+
+Now replace your GitHub file
+On Android:
+
+Open your ethix-wtt repository.
+
+Open index.html.
+
+Tap Edit ✏️.
+
+Select all the existing code and delete it.
+
+Open the downloaded index.html file and copy its contents into GitHub's editor.
+
+Commit changes.
+
+Wait 1–2 minutes.
+
+Open your site inside the SafePal DApp browser.
+
+Tap Connect mobile wallet.
+
+You should no longer get ethers is not defined.
+
+Don't approve or initiate a transfer yet. First test only the Connect mobile wallet button. If SafePal connects successfully, we'll test the Celo side with a small amount. 
+
+
+
+
+index.html
+HTML
+
+
+How can I copy this new index.html contents
+
+Yes. Since you're doing this on Android, the easiest way is to download the file I created and copy its contents into GitHub.
+
+Option 1 — easiest
+Tap Download the fixed index.html above.
+
+Your phone should open/download the HTML file.
+
+Open it with a text/code editor app.
+
+If Android asks which app to use, choose a text editor.
+
+Select All → Copy.
+
+Then:
+
+Open your GitHub repository:
+`anupamray12/ethix-wtt`
+
+Open index.html.
+
+Tap ✏️ Edit.
+
+Tap inside the code.
+
+Select All → Delete.
+
+Paste the new code.
+
+Scroll down and tap Commit changes.
+
+If your phone won't open the HTML file
+That's okay. I can also give you the entire code directly in the chat in a code block, so you can long-press → Copy and paste it into GitHub.
+
+If you want that, say “send code here” and I'll send the complete index.html code in one block.
+
+
+
+
+index.html
+HTML
+
+
+Give me the code here
+
+Sure. Copy everything inside the block below and paste it into your GitHub index.html editor.
+
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1020">
-<title>ETHIX Manual WTT v2</title>
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.15.0/dist/ethers.min.js"></script>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#080d18;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:520px;margin:auto;padding:18px 14px 42px}.card{background:#111827;border:1px solid #273449;border-radius:18px;padding:17px;margin:12px 0}
-h1{font-size:23px;margin:0 0 5px}.sub,.muted{color:#94a3b8;font-size:13px;line-height:1.45}
-label{display:block;color:#cbd5e1;font-size:13px;margin:14px 0 6px}
-input{width:100%;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:#fff;font-size:16px;outline:none}
-button{width:100%;padding:14px;border:0;border-radius:12px;background:#2563eb;color:#fff;font-size:15px;font-weight:750;margin-top:9px}
-button:disabled{opacity:.42}.secondary{background:#1e293b}.danger{background:#7f1d1d}
-.row{display:flex;gap:8px;align-items:center;justify-content:space-between}.pill{font-size:12px;background:#1e293b;border-radius:999px;padding:5px 9px}
-.step{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #202b3e}.step:last-child{border-bottom:0}
-.num{width:28px;height:28px;border-radius:50%;background:#243047;display:grid;place-items:center;font-weight:800;font-size:13px}
-.done .num{background:#166534}.active .num{background:#1d4ed8}
-#status{font-weight:650;margin:8px 0}.ok{color:#86efac}.warn{color:#fbbf24}.err{color:#fca5a5}
-#log{white-space:pre-wrap;word-break:break-word;background:#070b14;border-radius:12px;padding:11px;min-height:85px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
-a{color:#93c5fd;text-decoration:none}.tiny{font-size:11px;color:#64748b;word-break:break-all}
-</style>
-</head>
-<body>
-<main>
-<div class="card">
-  <h1>ETHIX Manual WTT v2</h1>
-  <div class="sub">Celo → Ethereum using Wormhole TokenBridge</div>
-  <div class="row" style="margin-top:12px"><span class="pill">Celo ETHIX</span><b>→</b><span class="pill">Ethereum ETHIX</span></div>
-</div>
-
-<div class="card">
-  <button id="connect">Connect mobile wallet</button>
-  <div id="wallet" class="muted" style="margin-top:8px">Not connected</div>
-</div>
-
-<div class="card">
-  <label>ETHIX amount</label>
-  <input id="amount" inputmode="decimal" autocomplete="off" placeholder="10">
-
-  <label>Ethereum recipient</label>
-  <input id="recipient" inputmode="text" autocomplete="off" placeholder="0x...">
-
-  <button id="approve" disabled>1. Approve ETHIX</button>
-  <button id="initiate" disabled>2. Initiate WTT</button>
-  <button id="vaa" disabled>3. Detect VAA automatically</button>
-  <button id="redeem" disabled>4. Redeem on Ethereum</button>
-</div>
-
-<div class="card">
-  <div class="muted">Progress</div>
-  <div id="s1" class="step"><div class="num">1</div><div>Approve ETHIX</div></div>
-  <div id="s2" class="step"><div class="num">2</div><div>Publish Wormhole transfer</div></div>
-  <div id="s3" class="step"><div class="num">3</div><div>Wait for Guardian VAA</div></div>
-  <div id="s4" class="step"><div class="num">4</div><div>Redeem on Ethereum</div></div>
-</div>
-
-<div class="card">
-  <div class="muted">Status</div>
-  <div id="status">Connect your mobile wallet.</div>
-  <div id="log"></div>
-</div>
-
-<div class="card muted">
-  <b>Verified mainnet addresses used by this version</b><br><br>
-  Celo ETHIX: <span class="tiny">0x9995cc8F20Db5896943Afc8eE0ba463259c931ed</span><br>
-  Ethereum ETHIX: <span class="tiny">0xFd09911130e6930Bf87F2B0554c44F400bD80D3e</span><br>
-  Celo TokenBridge: <span class="tiny">0x796Dff6D74F3E27060B71255Fe517BFb23C93eed</span><br>
-  Ethereum TokenBridge: <span class="tiny">0x3ee18b2214aff97000d974cf647e7c347e8fa585</span>
-</div>
-
-<div class="card muted">
-  <b>Safety</b><br>
-  This app never asks for a seed phrase or private key. Verify every wallet prompt. Start with a small test amount. You need CELO for the Celo transaction and ETH for the Ethereum redemption transaction.
-</div>
-</main>
-
-<script>
-const CELO_EVM = 42220n;
-const ETH_EVM = 1n;
-const CELO_WORMHOLE = 14;
-const ETH_WORMHOLE = 2;
-
-const ETHIX_CELO = "0x9995cc8F20Db5896943Afc8eE0ba463259c931ed";
-const ETHIX_ETHEREUM = "0xFd09911130e6930Bf87F2B0554c44F400bD80D3e";
-
-const CELO_TOKEN_BRIDGE = "0x796Dff6D74F3E27060B71255Fe517BFb23C93eed";
-const ETH_TOKEN_BRIDGE = "0x3ee18b2214aff97000d974cf647e7c347e8fa585";
-const CELO_CORE = "0xa321448d90d4e5b0a732867c18ea198e75cac48e";
-const LOG_MESSAGE_PUBLISHED =
-  "0x6eb224fb001ed210e379b335e35efe88672a8ce935d981a6896b27ffdf52a3b2";
-
-const WORMHOLESCAN = "https://api.wormholescan.io/v1";
-const CELO_RPC = "https://forno.celo.org";
-
-const ERC20_ABI = [
-  "function approve(address spender,uint256 amount) external returns(bool)",
-  "function allowance(address owner,address spender) view returns(uint256)",
-  "function decimals() view returns(uint8)",
-  "function balanceOf(address owner) view returns(uint256)"
-];
-
-const TOKEN_BRIDGE_ABI = [
-  "function wormhole() view returns(address)",
-  "function transferTokens(address token,uint256 amount,uint16 recipientChain,bytes32 recipient,uint256 arbiterFee,uint32 nonce) payable returns(uint64 sequence)",
-  "function completeTransfer(bytes encodedVm) external",
-  "function wrappedAsset(uint16 tokenChain,bytes32 tokenAddress) view returns(address)"
-];
-
-const CORE_ABI = [
-  "function messageFee() view returns(uint256)"
-];
-
-let browserProvider, signer, account;
-let sourceTx = null, vaaBytes = null, vaaId = null;
-
-const $ = id => document.getElementById(id);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function log(msg) {
-  $("log").textContent += msg + "\n";
-  $("log").scrollTop = $("log").scrollHeight;
+return "14/"+emitter.slice(2).padStart(64,"0")+"/"+sequence;
 }
-function status(msg, cls="") {
-  $("status").textContent = msg;
-  $("status").className = cls;
+return null;
 }
-function step(n, state) {
-  const e = $("s"+n);
-  e.classList.remove("active","done");
-  if(state) e.classList.add(state);
-}
-function fail(e) {
-  const m = e?.shortMessage || e?.reason || e?.message || String(e);
-  status("Error: " + m, "err");
-  log("ERROR: " + m);
-}
-function validAddress(a) {
-  return ethers.isAddress(a);
-}
-function getAmount() {
-  const a = $("amount").value.trim();
-  if(!/^\d+(\.\d+)?$/.test(a) || Number(a) <= 0)
-    throw new Error("Enter a valid ETHIX amount.");
-  return ethers.parseUnits(a, 18);
-}
-function getRecipient() {
-  const r = $("recipient").value.trim();
-  if(!validAddress(r)) throw new Error("Enter a valid Ethereum recipient address.");
-  return ethers.getAddress(r);
-}
-async function ensureChain(chainId) {
-  const want = chainId === CELO_EVM ? "0xa4ec" : "0x1";
-  try {
-    await window.ethereum.request({
-      method:"wallet_switchEthereumChain", params:[{chainId:want}]
-    });
-  } catch(e) {
-    if(chainId === CELO_EVM && e.code === 4902) {
-      await window.ethereum.request({
-        method:"wallet_addEthereumChain",
-        params:[{
-          chainId:"0xa4ec", chainName:"Celo Mainnet",
-          nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
-          rpcUrls:["https://forno.celo.org"],
-          blockExplorerUrls:["https://celoscan.io"]
-        }]
-      });
-    } else throw e;
-  }
-  browserProvider = new ethers.BrowserProvider(window.ethereum);
-  signer = await browserProvider.getSigner();
-}
-async function connect() {
-  if(!window.ethereum)
-    throw new Error("No compatible injected wallet. Open this page in MetaMask or another wallet's mobile browser.");
-  browserProvider = new ethers.BrowserProvider(window.ethereum);
-  const accounts = await browserProvider.send("eth_requestAccounts",[]);
-  account = ethers.getAddress(accounts[0]);
-  await ensureChain(CELO_EVM);
-  $("wallet").textContent = account;
-  $("approve").disabled = false;
-  $("initiate").disabled = false;
-  status("Connected to Celo.", "ok");
-  log("Wallet: "+account);
-}
-async function approve() {
-  await ensureChain(CELO_EVM);
-  const amount = getAmount();
-  const token = new ethers.Contract(ETHIX_CELO, ERC20_ABI, signer);
-  const tx = await token.approve(CELO_TOKEN_BRIDGE, amount);
-  log("Approve tx: "+tx.hash);
-  status("Waiting for approval confirmation...");
-  await tx.wait();
-  step(1,"done");
-  status("ETHIX approval confirmed.", "ok");
-}
-async function getWormholeFee() {
-  const bridge = new ethers.Contract(CELO_TOKEN_BRIDGE,TOKEN_BRIDGE_ABI,signer);
-  const coreAddress = await bridge.wormhole();
-  const core = new ethers.Contract(coreAddress,CORE_ABI,signer);
-  return await core.messageFee();
-}
-async function initiate() {
-  await ensureChain(CELO_EVM);
-  const amount = getAmount();
-  const recipient = getRecipient();
 
-  const token = new ethers.Contract(ETHIX_CELO,ERC20_ABI,signer);
-  const balance = await token.balanceOf(account);
-  if(balance < amount) throw new Error("Insufficient Celo ETHIX balance.");
-
-  const allowance = await token.allowance(account,CELO_TOKEN_BRIDGE);
-  if(allowance < amount) {
-    throw new Error("ETHIX is not approved for the current amount. Tap Approve first.");
-  }
-
-  status("Getting Wormhole message fee...");
-  const wormholeFee = await getWormholeFee();
-  log("Wormhole message fee: "+ethers.formatEther(wormholeFee)+" CELO");
-
-  const bridge = new ethers.Contract(CELO_TOKEN_BRIDGE,TOKEN_BRIDGE_ABI,signer);
-  const recipient32 = ethers.zeroPadValue(recipient,32);
-  const nonce = Math.floor(Math.random()*0xffffffff);
-
-  const tx = await bridge.transferTokens(
-    ETHIX_CELO,
-    amount,
-    ETH_WORMHOLE,
-    recipient32,
-    0,
-    nonce,
-    {value:wormholeFee}
-  );
-
-  sourceTx = tx.hash;
-  log("Celo WTT tx: "+sourceTx);
-  status("Waiting for Celo confirmation...");
-  await tx.wait();
-
-  step(2,"done");
-  $("vaa").disabled = false;
-  status("Celo transfer confirmed. Detecting Wormhole VAA...");
-  log("Source transaction confirmed.");
-  await detectVAA(true);
+async function fetchVaa(id){
+const r=await fetch(WORMHOLE_API+"/signed_vaa/"+id,{cache:"no-store"});
+if(!r.ok)return null;
+const j=await r.json();return j?.vaaBytes||null;
 }
-async function extractVaaId(txHash) {
-  const p = new ethers.JsonRpcProvider(CELO_RPC);
-  const receipt = await p.getTransactionReceipt(txHash);
-  if(!receipt) return null;
 
-  const core = CELO_CORE.toLowerCase();
-  for(const logItem of receipt.logs) {
-    if(logItem.address.toLowerCase() !== core) continue;
-    if(!logItem.topics?.[0] || logItem.topics[0].toLowerCase() !== LOG_MESSAGE_PUBLISHED.toLowerCase()) continue;
-    const emitter = "0x" + logItem.topics[1].slice(26);
-    const sequence = BigInt(logItem.data.slice(0,66)).toString();
-    return CELO_WORMHOLE + "/" + emitter.slice(2).padStart(64,"0") + "/" + sequence;
-  }
-  return null;
+async function detect(){
+if(!sourceTx)throw new Error("No Celo transfer transaction yet.");
+step(3,"active");$("vaa").disabled=true;status("Waiting for Guardian VAA...");
+if(!vaaId)vaaId=await getVaaId();
+if(!vaaId){$("vaa").disabled=false;throw new Error("Wormhole message not found in the Celo receipt.");}
+log("VAA ID: "+vaaId);
+for(let i=0;i<40;i++){
+try{const v=await fetchVaa(vaaId);if(v){vaaBytes=v;step(3,"done");$("redeem").disabled=false;status("VAA detected. Ready to redeem on Ethereum.","ok");log("VAA received.");return}}catch(e){log("Poll "+(i+1)+": "+e.message)}
+await sleep(5000);
 }
-async function fetchVaa(id) {
-  const url = WORMHOLESCAN + "/signed_vaa/" + id;
-  const r = await fetch(url, {cache:"no-store"});
-  if(!r.ok) return null;
-  const j = await r.json();
-  return j?.vaaBytes || null;
+$("vaa").disabled=false;throw new Error("VAA is not available yet. Tap Detect VAA again later.");
 }
-async function detectVAA(auto=false) {
-  if(!sourceTx) throw new Error("No source transaction yet.");
-  step(3,"active");
-  $("vaa").disabled = true;
-  status("Waiting for Wormhole Guardian attestation...");
-  if(!vaaId) vaaId = await extractVaaId(sourceTx);
-  if(!vaaId) {
-    $("vaa").disabled=false;
-    throw new Error("Could not find the Wormhole message in the Celo transaction receipt.");
-  }
-  log("VAA ID: "+vaaId);
 
-  for(let i=0;i<40;i++) {
-    try {
-      const v = await fetchVaa(vaaId);
-      if(v) {
-        vaaBytes=v;
-        step(3,"done");
-        $("redeem").disabled=false;
-        status("VAA detected. Ready to redeem on Ethereum.", "ok");
-        log("VAA received.");
-        return;
-      }
-    } catch(e) {
-      log("VAA poll "+(i+1)+": "+(e.message||e));
-    }
-    await sleep(5000);
-  }
-  $("vaa").disabled=false;
-  throw new Error("VAA not available yet. Tap Detect VAA again later.");
+function b64hex(s){
+s=s.trim().replace(/-/g,"+").replace(/_/g,"/");
+while(s.length%4)s+="=";
+const b=atob(s);let h="0x";
+for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");
+return h;
 }
-async function redeem() {
-  if(!vaaBytes) throw new Error("VAA has not been detected.");
-  await ensureChain(ETH_EVM);
 
-  const ethProvider = new ethers.BrowserProvider(window.ethereum);
-  const ethSigner = await ethProvider.getSigner();
-  const current = ethers.getAddress(await ethSigner.getAddress());
-
-  status("Submitting VAA to Ethereum TokenBridge...");
-  log("Ethereum wallet: "+current);
-
-  const bridge = new ethers.Contract(ETH_TOKEN_BRIDGE,TOKEN_BRIDGE_ABI,ethSigner);
-  const data = "0x" + Uint8Array.from(atob(vaaBytes),c=>c.charCodeAt(0))
-    .reduce((s,b)=>s+b.toString(16).padStart(2,"0"),"");
-
-  const tx = await bridge.completeTransfer(data);
-  log("Ethereum redemption tx: "+tx.hash);
-  status("Waiting for Ethereum confirmation...");
-  await tx.wait();
-
-  step(4,"done");
-  status("ETHIX redeemed successfully on Ethereum.", "ok");
-  log("Completed: "+tx.hash);
-  $("redeem").disabled=true;
+async function redeem(){
+if(!vaaBytes)throw new Error("VAA has not been detected.");
+await switchChain(ETH_CHAIN_ID);
+const b=new ethers.Contract(ETH_BRIDGE,BRIDGE,signer);
+const tx=await b.completeTransfer(b64hex(vaaBytes));
+log("Ethereum redemption: "+tx.hash);status("Waiting for Ethereum confirmation...");
+await tx.wait();step(4,"done");status("ETHIX redeemed successfully on Ethereum.","ok");log("Complete: "+tx.hash);
+const a=document.createElement("a");a.href="https://etherscan.io/tx/"+tx.hash;a.target="_blank";a.rel="noopener";a.textContent="Open transaction on Etherscan";a.style.display="block";a.style.marginTop="10px";$("log").appendChild(a);
+$("redeem").disabled=true;
 }
+
 $("connect").onclick=()=>connect().catch(fail);
 $("approve").onclick=()=>approve().catch(fail);
 $("initiate").onclick=()=>initiate().catch(fail);
-$("vaa").onclick=()=>detectVAA(false).catch(fail);
+$("vaa").onclick=()=>detect().catch(fail);
 $("redeem").onclick=()=>redeem().catch(fail);
 
-if(window.ethereum){
-  window.ethereum.on?.("accountsChanged",()=>location.reload());
-  window.ethereum.on?.("chainChanged",()=>location.reload());
+const ev=window.safepalProvider||window.ethereum;
+if(ev?.on){ev.on("accountsChanged",()=>location.reload());ev.on("chainChanged",()=>location.reload())}
+
+if(!window.ethers){
+status("Ethers library failed to load. Refresh or reopen in SafePal DApp browser.","err");
+log("ERROR: window.ethers is unavailable.");
 }
 </script>
 </body>
