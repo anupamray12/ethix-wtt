@@ -9,17 +9,81 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.15.0/dist/ethers.umd.min.js"></script>
 <script>
-const E=window.ethers,C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
+const E=window.ethers;
+const $=id=>document.getElementById(id);
+const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), redeemBtn=$("redeem");
+const conInfo=$("wallet"), statusBox=$("status");
+const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
+const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
 const erc=["function decimals() view returns(uint8)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
 const st=x=>document.getElementById("status").textContent=x;
-async function chain(id){try{await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]})}catch(e){if(e.code===4902&&id==="0xA4EC")await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:id,chainName:"Celo Mainnet",nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]}]});else throw e}}
-async function connect(){if(!window.ethereum)throw Error("Open this page inside SafePal DApp browser.");await window.ethereum.request({method:"eth_requestAccounts"});await chain(C.celo.id);p=new E.BrowserProvider(window.ethereum);s=await p.getSigner();me=await s.getAddress();dec=await new E.Contract(C.celo.tok,erc,p).decimals();document.getElementById("wallet").textContent="Connected: "+me+" | ETHIX decimals: "+dec;app.disabled=false;send.disabled=true;st("Connected on Celo. Checking ETHIX allowance…");}
-async function refreshAllowance(){try{if(!window.ethereum||!me)return;await chain(C.celo.id);p=new E.BrowserProvider(window.ethereum);let t=new E.Contract(C.celo.tok,erc,p),a=E.parseUnits(document.getElementById("amt").value||"0",dec),al=await t.allowance(me,C.celo.wtt);document.getElementById("send").disabled=al<a;}catch(e){document.getElementById("send").disabled=true;}}\nasync function approve(){await chain(C.celo.id);p=new E.BrowserProvider(window.ethereum);s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),t=new E.Contract(C.celo.tok,erc,s);let x=await t.approve(C.celo.wtt,a);st("Approval submitted:\n"+x.hash);await x.wait();document.getElementById("send").disabled=false;st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");await refreshAllowance();}
-async function send(){await chain(C.celo.id);p=new E.BrowserProvider(window.ethereum);s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),to=E.getAddress(document.getElementById("to").value),f=await new E.Contract(C.celo.core,core,p).messageFee(),n=Math.floor(Math.random()*4294967295),w=new E.Contract(C.celo.wtt,wtt,s),x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});document.getElementById("tx").value=x.hash;st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");await x.wait();st("Celo confirmed. Now tap Find signed VAA.");}
+async function getInjected(){
+  const x=providerInjected();
+  if(!x) throw Error("SafePal wallet provider not found. Open this GitHub Pages URL inside SafePal's DApp browser.");
+  return x;
+}
+async function chain(id){
+  const x=await getInjected();
+  const current=await x.request({method:"eth_chainId"});
+  if(current.toLowerCase()===id.toLowerCase()) return;
+  try{
+    await x.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]});
+  }catch(e){
+    if(e.code===4902 && id==="0xA4EC"){
+      await x.request({method:"wallet_addEthereumChain",params:[{
+        chainId:id,chainName:"Celo Mainnet",
+        nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
+        rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]
+      }]});
+    }else{
+      throw Error("SafePal could not switch to Celo. Please select Celo Mainnet in SafePal and tap Connect again. "+(e.message||""));
+    }
+  }
+}
+async function connect(){
+  const x=await getInjected();
+  try{
+    const accounts=await x.request({method:"eth_requestAccounts"});
+    if(!accounts||!accounts.length) throw Error("SafePal returned no account.");
+    await chain(C.celo.id);
+    p=new E.BrowserProvider(x);
+    s=await p.getSigner();
+    me=await s.getAddress();
+    dec=await new E.Contract(C.celo.tok,erc,p).decimals();
+    conInfo.textContent="Connected: "+me+" | ETHIX decimals: "+dec;
+    appBtn.disabled=false;
+    sendBtn.disabled=true;
+    st("Connected to SafePal on Celo. Checking ETHIX allowance…");
+    await refreshAllowance();
+  }catch(e){
+    conInfo.textContent="Not connected";
+    throw e;
+  }
+}
+async function refreshAllowance(){
+  try{
+    if(!providerInjected()||!me)return;
+    await chain(C.celo.id);
+    p=new E.BrowserProvider(await getInjected());
+    let t=new E.Contract(C.celo.tok,erc,p);
+    let a=E.parseUnits($("amt").value||"0",dec);
+    let al=await t.allowance(me,C.celo.wtt);
+    sendBtn.disabled=al<a;
+  }catch(e){
+    sendBtn.disabled=true;
+  }
+}
+async function approve(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),t=new E.Contract(C.celo.tok,erc,s);let x=await t.approve(C.celo.wtt,a);st("Approval submitted:\n"+x.hash);await x.wait();sendBtn.disabled=false;st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");await refreshAllowance();}
+async function send(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),to=E.getAddress(document.getElementById("to").value),f=await new E.Contract(C.celo.core,core,p).messageFee(),n=Math.floor(Math.random()*4294967295),w=new E.Contract(C.celo.wtt,wtt,s),x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});document.getElementById("tx").value=x.hash;st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");await x.wait();st("Celo confirmed. Now tap Find signed VAA.");}
 function b64hex(x){let b=atob(x.replace(/-/g,"+").replace(/_/g,"/")),h="0x";for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");return h}
 function seek(o){if(!o||typeof o!=="object")return null;if(typeof o.vaaBytes==="string")return o.vaaBytes;if(Array.isArray(o)){for(let x of o){let r=seek(x);if(r)return r}}else for(let k in o){let r=seek(o[k]);if(r)return r}return null}
 async function find(){let tx=document.getElementById("tx").value.trim();if(!/^0x[0-9a-fA-F]{64}$/.test(tx))throw Error("Enter the Celo transaction hash.");document.getElementById("vi").textContent="Searching Wormholescan…";let r=await fetch("https://api.wormholescan.io/api/v1/vaas/?txHash="+encodeURIComponent(tx)+"&pageSize=10"),j=await r.json(),v=seek(j);if(!v){document.getElementById("vi").textContent="VAA not ready yet. Wait and try again.";return}document.getElementById("vh").value=v.startsWith("0x")?v:b64hex(v);document.getElementById("vi").textContent="Signed VAA found.";st("VAA found. It has not been redeemed automatically.");}
-async function redeem(){let v=document.getElementById("vh").value.trim();if(!/^0x[0-9a-fA-F]+$/.test(v))throw Error("Valid VAA hex required.");await chain(C.eth.id);p=new E.BrowserProvider(window.ethereum);s=await p.getSigner();let w=new E.Contract(C.eth.wtt,wtt,s),x=await w.completeTransfer(v);st("Ethereum redemption submitted:\n"+x.hash);await x.wait();st("SUCCESS. Ethereum redemption confirmed:\n"+x.hash);}
-document.getElementById("amt").addEventListener("input",()=>{if(me)refreshAllowance();});\ncon.onclick=()=>connect().then(refreshAllowance).catch(e=>st("ERROR: "+(e.shortMessage||e.message)));app.onclick=()=>approve().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));send.onclick=()=>send().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));vaaBtn.onclick=()=>find().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));redeem.onclick=()=>redeem().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
+async function redeem(){let v=document.getElementById("vh").value.trim();if(!/^0x[0-9a-fA-F]+$/.test(v))throw Error("Valid VAA hex required.");await chain(C.eth.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let w=new E.Contract(C.eth.wtt,wtt,s),x=await w.completeTransfer(v);st("Ethereum redemption submitted:\n"+x.hash);await x.wait();st("SUCCESS. Ethereum redemption confirmed:\n"+x.hash);}
+$("amt").addEventListener("input",()=>{if(me)refreshAllowance();});
+conBtn.onclick=()=>connect().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
+appBtn.onclick=()=>approve().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
+sendBtn.onclick=()=>send().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
+vaaBtn.onclick=()=>find().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
+redeemBtn.onclick=()=>redeem().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 </script></body></html>
