@@ -3,7 +3,7 @@
 <body><div class="w">
 <div class="c"><h2>ETHIX Manual Wormhole WTT</h2><div class="small">Celo → Ethereum • manual VAA redemption • 2 ETHIX test</div></div>
 <div class="c"><button id="con">1. Connect SafePal</button><div id="wallet" class="small">Not connected</div></div>
-<div class="c"><label>Amount</label><input id="amt" value="2" inputmode="decimal"><label>Ethereum recipient</label><input id="to" value="0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2"><button id="app" disabled>2. Approve ETHIX</button><button id="send" disabled>3. Start MANUAL WTT</button></div>
+<div class="c"><label>Amount</label><input id="amt" value="2" inputmode="decimal"><label>Ethereum recipient</label><input id="to" value="0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2"><button id="app" disabled>2. Approve ETHIX</button><button id="send" disabled>3. Start MANUAL WTT</button><div class="small" id="wttNote">The button enables after the approval transaction is confirmed.</div></div>
 <div class="c"><label>Celo transaction hash</label><input id="tx" placeholder="0x..."><button id="vaaBtn">4. Find signed VAA</button><div id="vi" class="small"></div><label>VAA hex</label><textarea id="vh" style="width:100%;box-sizing:border-box;min-height:100px;background:#0c1222;color:#fff;border:1px solid #33405f;border-radius:12px"></textarea><button id="redeem">5. Redeem manually on Ethereum</button><div class="small">You need ETH on Ethereum for gas. This page does not use Portal's automatic relay.</div></div>
 <div class="c"><div class="small mono">Celo WTT: 0x796Dff6D74F3E27060B71255Fe517BFb23C93eed</div><div class="small mono">Celo Core: 0xa321448d90d4e5b0A732867c18eA198e75CAC48E</div><div class="small mono">Ethereum WTT: 0x3ee18B2214AFF97000D974cf647E7C347E8fa585</div><div id="status" class="s">Ready. Nothing signed.</div></div>
 </div>
@@ -74,7 +74,21 @@ async function refreshAllowance(){
     sendBtn.disabled=true;
   }
 }
-async function approve(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),t=new E.Contract(C.celo.tok,erc,s);let x=await t.approve(C.celo.wtt,a);st("Approval submitted:\n"+x.hash);await x.wait();sendBtn.disabled=false;st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");await refreshAllowance();}
+async function approve(){
+  await chain(C.celo.id);
+  p=new E.BrowserProvider(await getInjected());
+  s=await p.getSigner();
+  let a=E.parseUnits(document.getElementById("amt").value,dec);
+  let t=new E.Contract(C.celo.tok,erc,s);
+  let x=await t.approve(C.celo.wtt,a);
+  st("Approval submitted:\n"+x.hash+"\nWaiting for confirmation…");
+  await x.wait();
+  // Do not run a second allowance check here. Some SafePal providers
+  // temporarily fail read-only RPC calls immediately after a write.
+  // The approval receipt is already confirmed, so enable the next step.
+  sendBtn.disabled=false;
+  st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");
+}
 async function send(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),to=E.getAddress(document.getElementById("to").value),f=await new E.Contract(C.celo.core,core,p).messageFee(),n=Math.floor(Math.random()*4294967295),w=new E.Contract(C.celo.wtt,wtt,s),x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});document.getElementById("tx").value=x.hash;st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");await x.wait();st("Celo confirmed. Now tap Find signed VAA.");}
 function b64hex(x){let b=atob(x.replace(/-/g,"+").replace(/_/g,"/")),h="0x";for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");return h}
 function seek(o){if(!o||typeof o!=="object")return null;if(typeof o.vaaBytes==="string")return o.vaaBytes;if(Array.isArray(o)){for(let x of o){let r=seek(x);if(r)return r}}else for(let k in o){let r=seek(o[k]);if(r)return r}return null}
