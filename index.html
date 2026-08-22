@@ -1,12 +1,93 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ETHIX Manual WTT</title>
-<style>body{margin:0;background:#0b1020;color:#eee;font-family:system-ui}.w{max-width:560px;margin:auto;padding:16px}.c{background:#151c30;border:1px solid #29324d;border-radius:18px;padding:16px;margin:12px 0}input,button{width:100%;box-sizing:border-box;padding:14px;margin:7px 0;border-radius:12px;font-size:16px}input{background:#0c1222;color:#fff;border:1px solid #33405f}button{border:0;background:#536dff;color:#fff;font-weight:700}button:disabled{opacity:.4}.s{white-space:pre-wrap;background:#080d18;padding:12px;border-radius:10px;font-size:13px}.small{font-size:12px;color:#9aa7c4}.mono{word-break:break-all;font-family:monospace}a{color:#aabaff}</style></head>
-<body><div class="w">
-<div class="c"><h2>ETHIX Manual Wormhole WTT</h2><div class="small">Celo → Ethereum • manual VAA redemption • 2 ETHIX test</div></div>
-<div class="c"><button id="con">1. Connect SafePal</button><div id="wallet" class="small">Not connected</div></div>
-<div class="c"><label>Amount</label><input id="amt" value="2" inputmode="decimal"><label>Ethereum recipient</label><input id="to" value="0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2"><button id="app" disabled>2. Approve ETHIX</button><button id="send" disabled>3. Start MANUAL WTT</button><div class="small" id="wttNote">The button enables after the approval transaction is confirmed.</div></div>
-<div class="c"><label>Celo transaction hash</label><input id="tx" placeholder="0x..."><button id="vaaBtn">4. Find signed VAA</button><div id="vi" class="small"></div><label>VAA hex</label><textarea id="vh" style="width:100%;box-sizing:border-box;min-height:100px;background:#0c1222;color:#fff;border:1px solid #33405f;border-radius:12px"></textarea><button id="redeem">5. Redeem manually on Ethereum</button><div class="small">You need ETH on Ethereum for gas. This page does not use Portal's automatic relay.</div></div>
-<div class="c"><div class="small mono">Celo WTT: 0x796Dff6D74F3E27060B71255Fe517BFb23C93eed</div><div class="small mono">Celo Core: 0xa321448d90d4e5b0A732867c18eA198e75CAC48E</div><div class="small mono">Ethereum WTT: 0x3ee18B2214AFF97000D974cf647E7C347E8fa585</div><div id="status" class="s">Ready. Nothing signed.</div></div>
-</div>
+<style>
+:root{
+  --bg:#0b1020;--panel:#151c30;--panel2:#0c1222;--border:#29324d;
+  --text:#f4f7ff;--muted:#9aa7c4;--accent:#536dff;--ok:#35c98a;--danger:#ff6b7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#17213d 0,#0b1020 48%,#070b16 100%);
+ color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.w{width:min(680px,100%);margin:auto;padding:18px 14px 40px}
+.c{background:rgba(21,28,48,.94);border:1px solid var(--border);border-radius:18px;
+ padding:18px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+h2{margin:0 0 6px;font-size:22px}
+h3{margin:0 0 12px;font-size:17px}
+label{display:block;margin:10px 0 5px;font-size:13px;color:var(--muted)}
+input,textarea,button{width:100%;font:inherit}
+input,textarea{background:var(--panel2);color:#fff;border:1px solid #33405f;border-radius:12px;padding:13px}
+textarea{min-height:120px;resize:vertical}
+button{padding:13px;margin:7px 0;border:0;border-radius:12px;background:var(--accent);color:#fff;
+ font-weight:750;cursor:pointer;transition:.15s transform,.15s opacity}
+button:hover:not(:disabled){transform:translateY(-1px)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.small{font-size:12px;color:var(--muted);line-height:1.5}
+.step{display:flex;align-items:center;gap:10px}
+.badge{min-width:28px;height:28px;border-radius:50%;display:grid;place-items:center;
+ background:#273252;color:#cbd5ff;font-size:12px;font-weight:800}
+.status{white-space:pre-wrap;background:#080d18;padding:13px;border-radius:12px;
+ font-size:13px;border:1px solid #202a43;line-height:1.5}
+.status.ok{border-color:rgba(53,201,138,.45)}
+.status.error{border-color:rgba(255,107,122,.45);color:#ffd5da}
+.mono{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.meta{display:grid;gap:7px}
+.row{display:flex;justify-content:space-between;gap:12px}
+.row span:first-child{color:var(--muted)}
+a{color:#aabaff}
+</style></head>
+<body><main class="w">
+  <section class="c">
+    <h2>ETHIX Manual Wormhole WTT</h2>
+    <div class="small">Celo → Ethereum • manual VAA redemption • 2 ETHIX test</div>
+  </section>
+
+  <section class="c">
+    <div class="step"><div class="badge">1</div><h3>Connect wallet</h3></div>
+    <button id="con">Connect SafePal</button>
+    <div id="wallet" class="small">Not connected</div>
+  </section>
+
+  <section class="c">
+    <div class="step"><div class="badge">2</div><h3>Approve ETHIX</h3></div>
+    <label for="amt">Amount</label>
+    <input id="amt" value="2" inputmode="decimal" autocomplete="off">
+    <button id="app" disabled>Approve ETHIX</button>
+    <div class="small">Approval is requested only for the amount entered above.</div>
+  </section>
+
+  <section class="c">
+    <div class="step"><div class="badge">3</div><h3>Start manual WTT</h3></div>
+    <label for="to">Ethereum recipient</label>
+    <input id="to" value="0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2" autocomplete="off" spellcheck="false">
+    <button id="send" disabled>Start MANUAL WTT</button>
+    <div class="small" id="wttNote">The button enables after the approval transaction is confirmed.</div>
+  </section>
+
+  <section class="c">
+    <div class="step"><div class="badge">4</div><h3>Find signed VAA</h3></div>
+    <label for="tx">Celo transaction hash</label>
+    <input id="tx" placeholder="0x..." autocomplete="off" spellcheck="false">
+    <button id="vaaBtn">Find signed VAA</button>
+    <div id="vi" class="small">The app reads the confirmed Celo receipt, extracts the Wormhole message sequence, then fetches the signed VAA.</div>
+    <label for="vh">VAA hex</label>
+    <textarea id="vh" placeholder="0x..." spellcheck="false"></textarea>
+  </section>
+
+  <section class="c">
+    <div class="step"><div class="badge">5</div><h3>Redeem on Ethereum</h3></div>
+    <button id="redeem">Redeem manually on Ethereum</button>
+    <div class="small">You need ETH on Ethereum for gas. This page does not use Portal's automatic relay.</div>
+  </section>
+
+  <section class="c">
+    <div class="meta">
+      <div class="row"><span>Celo WTT</span><span class="mono">0x796Dff6D74F3E27060B71255Fe517BFb23C93eed</span></div>
+      <div class="row"><span>Celo Core</span><span class="mono">0xa321448d90d4e5b0A732867c18eA198e75CAC48E</span></div>
+      <div class="row"><span>Ethereum WTT</span><span class="mono">0x3ee18B2214AFF97000D974cf647E7C347E8fa585</span></div>
+    </div>
+    <br>
+    <div id="status" class="status">Ready. Nothing signed.</div>
+  </section>
+</main>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.15.0/dist/ethers.umd.min.js"></script>
 <script>
 const E=window.ethers;
@@ -15,9 +96,11 @@ const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), r
 const conInfo=$("wallet"), statusBox=$("status");
 const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
 const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
-const erc=["function decimals() view returns(uint8)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
+const erc=["function decimals() view returns(uint8)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
-const st=x=>document.getElementById("status").textContent=x;
+const st=x=>{const b=document.getElementById("status");b.textContent=x;b.className="status";
+  if(/^SUCCESS|^Connected|^Approval confirmed|^Celo confirmed|^VAA found/.test(x))b.classList.add("ok");
+  if(/^ERROR/.test(x))b.classList.add("error");};
 async function getInjected(){
   const x=providerInjected();
   if(!x) throw Error("SafePal wallet provider not found. Open this GitHub Pages URL inside SafePal's DApp browser.");
@@ -92,7 +175,94 @@ async function approve(){
 async function send(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),to=E.getAddress(document.getElementById("to").value),f=await new E.Contract(C.celo.core,core,p).messageFee(),n=Math.floor(Math.random()*4294967295),w=new E.Contract(C.celo.wtt,wtt,s),x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});document.getElementById("tx").value=x.hash;st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");await x.wait();st("Celo confirmed. Now tap Find signed VAA.");}
 function b64hex(x){let b=atob(x.replace(/-/g,"+").replace(/_/g,"/")),h="0x";for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");return h}
 function seek(o){if(!o||typeof o!=="object")return null;if(typeof o.vaaBytes==="string")return o.vaaBytes;if(Array.isArray(o)){for(let x of o){let r=seek(x);if(r)return r}}else for(let k in o){let r=seek(o[k]);if(r)return r}return null}
-async function find(){let tx=document.getElementById("tx").value.trim();if(!/^0x[0-9a-fA-F]{64}$/.test(tx))throw Error("Enter the Celo transaction hash.");document.getElementById("vi").textContent="Searching Wormholescan…";let r=await fetch("https://api.wormholescan.io/api/v1/vaas/?txHash="+encodeURIComponent(tx)+"&pageSize=10"),j=await r.json(),v=seek(j);if(!v){document.getElementById("vi").textContent="VAA not ready yet. Wait and try again.";return}document.getElementById("vh").value=v.startsWith("0x")?v:b64hex(v);document.getElementById("vi").textContent="Signed VAA found.";st("VAA found. It has not been redeemed automatically.");}
+const LOG_MESSAGE_PUBLISHED_TOPIC =
+  "0x6eb224fb001ed210e379b335e35efe88672a8ce935d981a6896b27ffdf52a3b2";
+const CELO_WORMHOLE_CHAIN_ID = 14;
+const WORMHOLESCAN_BASE = "https://api.wormholescan.io";
+
+function normalizeVaa(v){
+  if(!v || typeof v!=="string") return null;
+  if(/^0x[0-9a-fA-F]+$/.test(v)) return v;
+  try{return b64hex(v)}catch(e){return null}
+}
+
+async function getVaaFromCeloReceipt(tx){
+  await chain(C.celo.id);
+  const rpc=new E.JsonRpcProvider(C.celo.rpc);
+  const receipt=await rpc.getTransactionReceipt(tx);
+  if(!receipt) throw Error("Celo transaction receipt is not available yet. Check the transaction hash.");
+
+  const logs=receipt.logs.filter(l =>
+    l.address.toLowerCase()===C.celo.core.toLowerCase() &&
+    l.topics && l.topics[0] && l.topics[0].toLowerCase()===LOG_MESSAGE_PUBLISHED_TOPIC.toLowerCase()
+  );
+  if(!logs.length) throw Error("No Wormhole LogMessagePublished event was found in this transaction.");
+
+  // LogMessagePublished(address indexed sender,uint64 sequence,uint32 nonce,bytes payload,uint8 consistencyLevel)
+  const log=logs[0];
+  const emitter=E.zeroPadValue(E.getAddress("0x"+log.topics[1].slice(-40)),32).slice(2).toLowerCase();
+  const sequence=BigInt("0x"+log.data.slice(2,66)).toString();
+  return {id:`${CELO_WORMHOLE_CHAIN_ID}/${emitter}/${sequence}`,emitter,sequence};
+}
+
+async function fetchSignedVaaById(id){
+  const urls=[
+    `${WORMHOLESCAN_BASE}/v1/signed_vaa/${id}`,
+    `${WORMHOLESCAN_BASE}/api/v1/signed_vaa/${id}`
+  ];
+  let lastError="";
+  for(const url of urls){
+    try{
+      const r=await fetch(url,{headers:{accept:"application/json"}});
+      const text=await r.text();
+      if(!r.ok){lastError=`HTTP ${r.status}`;continue}
+      const j=JSON.parse(text);
+      const v=normalizeVaa(j.vaaBytes || j.vaa || j.bytes);
+      if(v) return v;
+      lastError="Response did not contain vaaBytes";
+    }catch(e){lastError=e.message||String(e)}
+  }
+  throw Error("Signed VAA endpoint did not return a VAA yet ("+lastError+").");
+}
+
+async function find(){
+  const tx=$("tx").value.trim();
+  if(!/^0x[0-9a-fA-F]{64}$/.test(tx)) throw Error("Enter the Celo transaction hash.");
+
+  $("vaaBtn").disabled=true;
+  $("vi").textContent="Reading the confirmed Celo transaction…";
+  try{
+    const info=await getVaaFromCeloReceipt(tx);
+    $("vi").textContent="Wormhole message found. VAA ID: "+info.id+"\nFetching Guardian-signed VAA…";
+
+    const v=await fetchSignedVaaById(info.id);
+    $("vh").value=v;
+    $("vi").textContent="Signed VAA found. Emitter: "+info.emitter+" • Sequence: "+info.sequence;
+    st("VAA found. It has not been redeemed automatically.");
+  }catch(e){
+    // Keep the old txHash lookup as a fallback because Wormholescan may index
+    // the operation before the signed_vaa endpoint is reachable.
+    $("vi").textContent="Direct VAA lookup failed. Checking Wormholescan transaction index…";
+    try{
+      const r=await fetch(
+        WORMHOLESCAN_BASE+"/api/v1/vaas/?txHash="+encodeURIComponent(tx)+"&pageSize=20",
+        {headers:{accept:"application/json"}}
+      );
+      if(!r.ok) throw Error("HTTP "+r.status);
+      const j=await r.json();
+      const v=normalizeVaa(seek(j));
+      if(!v) throw Error("No signed VAA in Wormholescan transaction response.");
+      $("vh").value=v;
+      $("vi").textContent="Signed VAA found from Wormholescan transaction index.";
+      st("VAA found. It has not been redeemed automatically.");
+    }catch(e2){
+      $("vi").textContent="Could not retrieve the signed VAA yet.";
+      throw Error((e.message||String(e))+" Fallback: "+(e2.message||String(e2)));
+    }
+  }finally{
+    $("vaaBtn").disabled=false;
+  }
+}
 async function redeem(){let v=document.getElementById("vh").value.trim();if(!/^0x[0-9a-fA-F]+$/.test(v))throw Error("Valid VAA hex required.");await chain(C.eth.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let w=new E.Contract(C.eth.wtt,wtt,s),x=await w.completeTransfer(v);st("Ethereum redemption submitted:\n"+x.hash);await x.wait();st("SUCCESS. Ethereum redemption confirmed:\n"+x.hash);}
 $("amt").addEventListener("input",()=>{if(me)refreshAllowance();});
 conBtn.onclick=()=>connect().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
