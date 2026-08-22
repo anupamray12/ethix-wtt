@@ -37,21 +37,21 @@ a{color:#aabaff}
 <body><main class="w">
   <section class="c">
     <h2>ETHIX Manual Wormhole WTT</h2>
-    <div class="small">Celo → Ethereum • protected manual VAA redemption • flexible amount</div>
+    <div class="small">Celo → Ethereum • manual VAA redemption • 2 ETHIX test</div>
   </section>
 
   <section class="c">
     <div class="step"><div class="badge">1</div><h3>Connect wallet</h3></div>
-    <button id="con">Connect SafePal Wallet</button>
+    <button id="con">Connect SafePal</button>
     <div id="wallet" class="small">Not connected</div>
   </section>
 
   <section class="c">
     <div class="step"><div class="badge">2</div><h3>Approve ETHIX</h3></div>
     <label for="amt">Amount</label>
-    <input id="amt" value="1530" inputmode="decimal" autocomplete="off" min="0.00000001" step="0.00000001">
+    <input id="amt" value="2" inputmode="decimal" autocomplete="off">
     <button id="app" disabled>Approve ETHIX</button>
-    <div id="balanceInfo" class="small">Connect SafePal to check ETHIX balance and allowance. UI ceiling: 1,000,000 ETHIX; the actual safe limit is your on-chain balance, allowance, contract/rate limits, and successful simulation.</div>
+    <div class="small">Approval is requested only for the amount entered above.</div>
   </section>
 
   <section class="c">
@@ -59,7 +59,7 @@ a{color:#aabaff}
     <label for="to">Ethereum recipient</label>
     <input id="to" value="0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2" autocomplete="off" spellcheck="false">
     <button id="send" disabled>Start MANUAL WTT</button>
-    <div class="small" id="wttNote">Enter the amount you want to transfer. The page checks balance, allowance, recipient, VAA, and redemption before signing.</div>
+    <div class="small" id="wttNote">The button enables after the approval transaction is confirmed.</div>
   </section>
 
   <section class="c">
@@ -74,8 +74,8 @@ a{color:#aabaff}
 
   <section class="c">
     <div class="step"><div class="badge">5</div><h3>Redeem on Ethereum</h3></div>
-    <button id="redeem" disabled>Redeem on Ethereum</button>
-    <div class="small" id="redeemNote">Find and verify the signed VAA first. The page will simulate redemption before SafePal is asked to sign.</div>
+    <button id="redeem">Redeem manually on Ethereum</button>
+    <div class="small">You need ETH on Ethereum for gas. The page first simulates the VAA, then asks SafePal to submit it directly.</div>
   </section>
 
   <section class="c">
@@ -85,11 +85,7 @@ a{color:#aabaff}
       <div class="row"><span>Ethereum WTT</span><span class="mono">0x3ee18B2214AFF97000D974cf647E7C347E8fa585</span></div>
     </div>
     <br>
-    <div id="safety" class="status">
-<b>1,530 ETHIX safety checks</b>
-<div id="checks">Connect SafePal to begin the checks.</div>
-</div>
-<div id="status" class="status">Ready. Nothing signed.</div>
+    <div id="status" class="status">Ready. Nothing signed.</div>
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.15.0/dist/ethers.umd.min.js"></script>
@@ -98,172 +94,70 @@ const E=window.ethers;
 const $=id=>document.getElementById(id);
 const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), redeemBtn=$("redeem");
 const conInfo=$("wallet"), statusBox=$("status");
-const providerInjected=()=>window.safepalProvider||window.ethereum||window.safepal;
+const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
 const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",rpc:"https://ethereum-rpc.publicnode.com",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
-const erc=["function decimals() view returns(uint8)","function balanceOf(address) view returns(uint256)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
+const erc=["function decimals() view returns(uint8)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
-const MAX_UI_AMOUNT = "1000000"; // UI ceiling; actual transfer is still limited by balance/allowance/contract checks.
-const DEFAULT_RECIPIENT = "0xD2DAcD4c4F53DeEF010B3EbdDe45cB90eC5545f2";
-const TARGET_TOKEN = C.celo.tok;
-const TARGET_CELO_CHAIN = 14;
-const TARGET_ETH_CHAIN = 2;
-
-function setChecks(lines, good=false){
-  const el=$("checks");
-  el.innerHTML=lines.map(x=>`<div>${x}</div>`).join("");
-  $("safety").className="status"+(good?" ok":"");
-}
-
-function formatToken(v){
-  try{return E.formatUnits(v,dec)+" ETHIX"}catch(e){return String(v)}
-}
-
-function getRequestedAmount(){
-  const raw=$("amt").value.trim();
-  if(!raw) throw Error("Enter an ETHIX amount.");
-  let n;
-  try{ n=E.parseUnits(raw,dec); }catch(e){ throw Error("Enter a valid ETHIX amount."); }
-  if(n<=0n) throw Error("Amount must be greater than zero.");
-  const max=E.parseUnits(MAX_UI_AMOUNT,dec);
-  if(n>max) throw Error("Amount exceeds the UI safety ceiling of 1,000,000 ETHIX.");
-  return {raw,n};
-}
-
-async function readCeloState(){
-  if(!me) throw Error("Connect SafePal first.");
-  await chain(C.celo.id);
-  const rpc=new E.JsonRpcProvider(C.celo.rpc);
-  const token=new E.Contract(C.celo.tok,erc,rpc);
-  const [balance,allowance] = await Promise.all([
-    token.balanceOf(me),
-    token.allowance(me,C.celo.wtt)
-  ]);
-  const requested=getRequestedAmount();
-  const needed=requested.n;
-  const recipient=E.getAddress($("to").value.trim());
-
-  const lines=[
-    `✓ Requested amount: <b>${requested.raw} ETHIX</b>`,
-    `✓ Wallet balance: <b>${formatToken(balance)}</b>`,
-    `${balance>=needed?"✓":"✗"} Balance ${balance>=needed?"is sufficient":"is NOT sufficient"}`,
-    `${allowance>=needed?"✓":"✗"} Allowance: <b>${formatToken(allowance)}</b>`,
-    `✓ Source token: <span class="mono">${C.celo.tok}</span>`,
-    `✓ Destination: <b>Ethereum Mainnet</b>`,
-    `✓ Recipient: <span class="mono">${recipient}</span>`
-  ];
-  $("balanceInfo").innerHTML=
-    `Balance: <b>${formatToken(balance)}</b> • Allowance: <b>${formatToken(allowance)}</b>`;
-
-  return {balance,allowance,needed,recipient,token,rpc};
-}
-
-async function refreshSafety(){
-  try{
-    if(!me) return;
-    const x=await getInjected();
-    const active=await x.request({method:"eth_chainId"});
-    if(String(active).toLowerCase()!==String(C.celo.id).toLowerCase()){
-      sendBtn.disabled=true;
-      return false;
-    }
-    const q=await readCeloState();
-    const ok=q.balance>=q.needed && q.allowance>=q.needed;
-    setChecks([
-      `✓ Requested amount: <b>${E.formatUnits(q.needed,dec)} ETHIX</b>`,
-      `${q.balance>=q.needed?"✓":"✗"} Wallet balance: <b>${formatToken(q.balance)}</b>`,
-      `${q.allowance>=q.needed?"✓":"✗"} Current allowance: <b>${formatToken(q.allowance)}</b>`,
-      `✓ Ethereum recipient: <span class="mono">${q.recipient}</span>`,
-      `✓ Source token verified: <span class="mono">${C.celo.tok}</span>`,
-      ok ? "✓ Pre-transfer checks passed." : "✗ Pre-transfer checks have not passed."
-    ],ok);
-    appBtn.disabled=false;
-    sendBtn.disabled=!ok;
-    return ok;
-  }catch(e){
-    sendBtn.disabled=true;
-    setChecks(["✗ "+(e.message||String(e))],false);
-    return false;
-  }
-}
-
 const st=x=>{const b=document.getElementById("status");b.textContent=x;b.className="status";
   if(/^SUCCESS|^Connected|^Approval confirmed|^Celo confirmed|^VAA found/.test(x))b.classList.add("ok");
   if(/^ERROR/.test(x))b.classList.add("error");};
 async function getInjected(){
-  // SafePal's official EVM provider is window.safepalProvider.
-  // Use it first; only fall back to another EIP-1193 provider when SafePal's
-  // provider is not exposed (for example, desktop browser extension setups).
-  const x=window.safepalProvider||window.ethereum||window.safepal;
-  if(!x) throw Error("SafePal provider not found. Open this page in SafePal's DApp browser or use the SafePal extension.");
+  const x=providerInjected();
+  if(!x) throw Error("SafePal wallet provider not found. Open this GitHub Pages URL inside SafePal's DApp browser.");
   return x;
 }
 async function chain(id){
   const x=await getInjected();
-  const target=String(id);
   const current=await x.request({method:"eth_chainId"});
-  if(String(current).toLowerCase()===target.toLowerCase()) return;
-
+  if(String(current).toLowerCase()===id.toLowerCase()) return;
   try{
-    await x.request({
-      method:"wallet_switchEthereumChain",
-      params:[{chainId:target}]
-    });
+    await x.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]});
   }catch(e){
-    throw Error(
-      "Please switch SafePal to "+
-      (target.toLowerCase()==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+
-      " manually, then tap the button again."
-    );
+    if(e.code===4902 && id==="0xA4EC"){
+      await x.request({method:"wallet_addEthereumChain",params:[{
+        chainId:id,chainName:"Celo Mainnet",
+        nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
+        rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]
+      }]});
+    }else if(e.code===4902 && id==="0x1"){
+      await x.request({method:"wallet_addEthereumChain",params:[{
+        chainId:"0x1",chainName:"Ethereum Mainnet",
+        nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},
+        rpcUrls:[C.eth.rpc],
+        blockExplorerUrls:["https://etherscan.io"]
+      }]});
+    }else{
+      throw Error("SafePal could not switch networks. Please select "+(id==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+" in SafePal and try again. "+(e.message||""));
+    }
   }
 
-  // Confirm the provider really changed networks.
+  // SafePal emits chainChanged, but some versions return before the provider
+  // is fully ready. Verify the active chain before continuing.
   for(let i=0;i<10;i++){
     const now=await x.request({method:"eth_chainId"});
-    if(String(now).toLowerCase()===target.toLowerCase()) return;
-    await new Promise(r=>setTimeout(r,250));
+    if(String(now).toLowerCase()===id.toLowerCase()) return;
+    await new Promise(r=>setTimeout(r,300));
   }
-  throw Error("SafePal did not finish switching networks.");
+  throw Error("SafePal did not switch to the requested network.");
 }
 async function connect(){
   const x=await getInjected();
-  conBtn.disabled=true;
   try{
-    // This is the exact SafePal-recommended EVM connection request.
     const accounts=await x.request({method:"eth_requestAccounts"});
     if(!accounts||!accounts.length) throw Error("SafePal returned no account.");
-
+    await chain(C.celo.id);
     p=new E.BrowserProvider(x);
     s=await p.getSigner();
-    me=E.getAddress(accounts[0]);
-
-    // Read the current chain only; do not force a network switch while
-    // connecting. This avoids breaking SafePal mobile DApp-browser sessions.
-    let chainId=await x.request({method:"eth_chainId"});
-    const token=new E.Contract(C.celo.tok,erc,p);
-    try{ dec=Number(await token.decimals()); }catch(e){ dec=18; }
-
-    conInfo.textContent="Connected: "+me;
+    me=await s.getAddress();
+    dec=await new E.Contract(C.celo.tok,erc,p).decimals();
+    conInfo.textContent="Connected: "+me+" | ETHIX decimals: "+dec;
     appBtn.disabled=false;
     sendBtn.disabled=true;
-
-    if(String(chainId).toLowerCase()===String(C.celo.id).toLowerCase()){
-      st("Connected to SafePal. Celo is selected. Checking ETHIX…");
-      await refreshSafety();
-    }else{
-      st("Connected to SafePal: "+me+"
-Please select Celo Mainnet in SafePal before Approve.");
-      setChecks([
-        "✓ SafePal wallet connected",
-        `✓ Address: <span class="mono">${me}</span>`,
-        "⚠ Celo Mainnet is not currently selected",
-        "Switch to Celo Mainnet in SafePal, then continue."
-      ],false);
-    }
+    st("Connected to SafePal on Celo. Checking ETHIX allowance…");
+    await refreshAllowance();
   }catch(e){
     conInfo.textContent="Not connected";
     throw e;
-  }finally{
-    conBtn.disabled=false;
   }
 }
 async function refreshAllowance(){
@@ -275,87 +169,37 @@ async function refreshAllowance(){
     let a=E.parseUnits($("amt").value||"0",dec);
     let al=await t.allowance(me,C.celo.wtt);
     sendBtn.disabled=al<a;
-    $("balanceInfo").textContent="Allowance: "+formatToken(al)+" • Balance will be checked before transfer.";
   }catch(e){
     sendBtn.disabled=true;
   }
 }
 async function approve(){
-  const q=await readCeloState();
-  if(q.balance<q.needed) throw Error("Wallet balance is below 1,530 ETHIX.");
-  if(q.allowance>=q.needed){
-    sendBtn.disabled=false;
-    st("Allowance already covers the requested amount. No approval transaction is needed.");
-    await refreshSafety();
-    return;
-  }
   await chain(C.celo.id);
   p=new E.BrowserProvider(await getInjected());
   s=await p.getSigner();
-  const t=new E.Contract(C.celo.tok,erc,s);
-  const x=await t.approve(C.celo.wtt,q.needed);
-  st("Approval submitted:
-"+x.hash+"
-Waiting for confirmation…");
+  let a=E.parseUnits(document.getElementById("amt").value,dec);
+  let t=new E.Contract(C.celo.tok,erc,s);
+  let x=await t.approve(C.celo.wtt,a);
+  st("Approval submitted:\n"+x.hash+"\nWaiting for confirmation…");
   await x.wait();
-  const verified=await readCeloState();
-  if(verified.allowance<verified.needed)
-    throw Error("Approval transaction confirmed, but the allowance is still below the requested amount.");
+  // Do not run a second allowance check here. Some SafePal providers
+  // temporarily fail read-only RPC calls immediately after a write.
+  // The approval receipt is already confirmed, so enable the next step.
   sendBtn.disabled=false;
-  await refreshSafety();
-  st("Approval confirmed and verified:
-"+x.hash+"
-
-1,530 ETHIX is ready for the pre-transfer check.");
+  st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");
 }
-async function send(){
-  const q=await readCeloState();
-  if(q.balance<q.needed) throw Error("Wallet balance is below 1,530 ETHIX.");
-  if(q.allowance<q.needed) throw Error("Allowance is below 1,530 ETHIX. Approve first.");
-  if(q.recipient.toLowerCase()!==E.getAddress(DEFAULT_RECIPIENT).toLowerCase())
-    throw Error("This protected version is locked to the configured Ethereum recipient.");
+async function send(){await chain(C.celo.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let a=E.parseUnits(document.getElementById("amt").value,dec),to=E.getAddress(document.getElementById("to").value),f=await new E.Contract(C.celo.core,core,p).messageFee(),n=Math.floor(Math.random()*4294967295),w=new E.Contract(C.celo.wtt,wtt,s),x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});document.getElementById("tx").value=x.hash;st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");await x.wait();st("Celo confirmed. Now tap Find signed VAA.");}
+function b64hex(x){let b=atob(x.replace(/-/g,"+").replace(/_/g,"/")),h="0x";for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");return h}
+function seek(o){if(!o||typeof o!=="object")return null;if(typeof o.vaaBytes==="string")return o.vaaBytes;if(Array.isArray(o)){for(let x of o){let r=seek(x);if(r)return r}}else for(let k in o){let r=seek(o[k]);if(r)return r}return null}
+const LOG_MESSAGE_PUBLISHED_TOPIC =
+  "0x6eb224fb001ed210e379b335e35efe88672a8ce935d981a6896b27ffdf52a3b2";
+const CELO_WORMHOLE_CHAIN_ID = 14;
+const WORMHOLESCAN_BASE = "https://api.wormholescan.io";
 
-  const fee=await new E.Contract(C.celo.core,core,q.rpc).messageFee();
-  const nonce=crypto.getRandomValues(new Uint32Array(1))[0];
-
-  // Simulate the exact WTT transaction before SafePal is asked to sign.
-  const wRead=new E.Contract(C.celo.wtt,wtt,q.rpc);
-  try{
-    await wRead.transferTokens.staticCall(
-      C.celo.tok,q.needed,TARGET_ETH_CHAIN,E.zeroPadValue(q.recipient,32),0,nonce,{value:fee}
-    );
-  }catch(e){
-    throw Error("Celo rejected the 1,530 ETHIX transfer during simulation. "+readableRpcError(e));
-  }
-
-  setChecks([
-    "✓ Balance check passed",
-    "✓ Allowance check passed",
-    `✓ Requested amount: <b>${E.formatUnits(q.needed,dec)} ETHIX</b>`,
-    "✓ Recipient verified",
-    "✓ Celo WTT contract verified",
-    "✓ Celo transfer simulation passed",
-    "✓ Wormhole fee available",
-    "<b>Ready — SafePal will now ask you to sign.</b>"
-  ],true);
-
-  if(!confirm("FINAL CHECK\n\nTransfer exactly "+E.formatUnits(q.needed,dec)+" ETHIX from Celo to:\n"+q.recipient+"\n\nContinue to SafePal?"))
-    return;
-
-  await chain(C.celo.id);
-  p=new E.BrowserProvider(await getInjected());
-  s=await p.getSigner();
-  const w=new E.Contract(C.celo.wtt,wtt,s);
-  const x=await w.transferTokens(
-    C.celo.tok,q.needed,TARGET_ETH_CHAIN,E.zeroPadValue(q.recipient,32),0,nonce,{value:fee}
-  );
-  $("tx").value=x.hash;
-  st("1,530 ETHIX MANUAL WTT submitted:
-"+x.hash+"
-Waiting for Celo confirmation…");
-  await x.wait();
-  st("Celo confirmed. The source transaction is complete.
-Now tap Find signed VAA.");
+function normalizeVaa(v){
+  if(!v || typeof v!=="string") return null;
+  if(/^0x[0-9a-fA-F]+$/.test(v)) return v;
+  try{return b64hex(v)}catch(e){return null}
 }
 
 async function getVaaFromCeloReceipt(tx){
@@ -446,56 +290,10 @@ function readableRpcError(e){
   return parts.join(" | ") || "Unknown RPC error";
 }
 
-
-function parseVaaPayloadHex(v){
-  const h=v.slice(2);
-  if(h.length<12) throw Error("VAA is too short.");
-  const sigCount=parseInt(h.slice(8,10),16);
-  if(sigCount<1 || sigCount>19) throw Error("VAA signature count is invalid: "+sigCount);
-  const headerLen=(4+1+sigCount*66)*2;
-  if(h.length<headerLen+2) throw Error("VAA is truncated.");
-  return {hex:h, sigCount, headerLen};
-}
-
-function parseTransferPayload(v){
-  const {hex,sigCount,headerLen}=parseVaaPayloadHex(v);
-  const body=hex.slice(headerLen);
-  // WTT transfer payload type 1: amount(32) tokenAddress(32) tokenChain(2)
-  // to(32) toChain(2) fee(32)
-  if(body.length<2+64+64+4+64+4+64)
-    throw Error("VAA payload is too short for a standard WTT transfer.");
-  const payloadType=parseInt(body.slice(0,2),16);
-  if(payloadType!==1) throw Error("Unexpected WTT payload type: "+payloadType);
-  const amountHex=body.slice(2,66);
-  const tokenHex=body.slice(66,130);
-  const tokenChain=parseInt(body.slice(130,134),16);
-  const toHex=body.slice(134,198);
-  const toChain=parseInt(body.slice(198,202),16);
-  const amount=BigInt("0x"+amountHex);
-  const tokenAddress="0x"+tokenHex.slice(-40);
-  const recipient="0x"+toHex.slice(-40);
-  return {sigCount,amount,tokenAddress,tokenChain,recipient,toChain};
-}
-
 async function redeem(){
   const v=$("vh").value.trim();
   if(!/^0x[0-9a-fA-F]+$/.test(v) || v.length<100)
     throw Error("Valid signed VAA hex required.");
-
-  const parsed=parseTransferPayload(v);
-  const expectedRecipient=E.getAddress($("to").value.trim());
-
-  if(parsed.tokenChain!==TARGET_CELO_CHAIN)
-    throw Error("VAA source token chain is not Celo (14).");
-  if(parsed.tokenAddress.toLowerCase()!==C.celo.tok.toLowerCase())
-    throw Error("VAA token does not match the configured ETHIX token.");
-  if(parsed.toChain!==TARGET_ETH_CHAIN)
-    throw Error("VAA destination is not Ethereum.");
-  if(parsed.recipient.toLowerCase()!==expectedRecipient.toLowerCase())
-    throw Error("VAA recipient does not match the configured Ethereum recipient.");
-  const requestedAtRedemption = getRequestedAmount();
-  if(parsed.amount!==requestedAtRedemption.n)
-    throw Error("VAA amount does not match the requested amount. Actual: "+E.formatUnits(parsed.amount,dec)+" ETHIX.");
 
   await chain(C.eth.id);
   const injected=await getInjected();
@@ -505,11 +303,13 @@ async function redeem(){
   const to=C.eth.wtt;
   const iface=new E.Interface(wtt);
   const data=iface.encodeFunctionData("completeTransfer",[v]);
+
+  // Use a normal Ethereum RPC for simulation and gas estimation. This avoids
+  // the SafePal + ethers v6 eth_estimateGas error shown as "could not coalesce error".
   const ethRpc=new E.JsonRpcProvider(C.eth.rpc);
   const txReq={from,to,data,value:"0x0"};
 
-  st("VAA verified: 1,530 ETHIX → configured Ethereum recipient.
-Checking Ethereum redemption…");
+  st("Checking the VAA on Ethereum before asking SafePal to sign…");
   try{
     await ethRpc.call(txReq);
   }catch(e){
@@ -520,84 +320,36 @@ Checking Ethereum redemption…");
   try{
     gas=await ethRpc.estimateGas(txReq);
   }catch(e){
-    throw Error("Ethereum could not estimate redemption gas. "+readableRpcError(e));
+    throw Error("The VAA is readable, but Ethereum could not estimate redemption gas. "+readableRpcError(e));
   }
 
   const gasHex="0x"+gas.toString(16);
-  setChecks([
-    "✓ VAA signature structure valid",
-    "✓ Source token = configured Celo ETHIX",
-    "✓ Source chain = Celo",
-    `✓ Amount = <b>${E.formatUnits(parsed.amount,dec)} ETHIX</b>`,
-    "✓ Destination = Ethereum",
-    "✓ Recipient matches configured address",
-    "✓ Ethereum redemption simulation passed",
-    `✓ Estimated gas: <b>${gas.toString()}</b>`,
-    "<b>Ready for final SafePal Ethereum signature.</b>"
-  ],true);
+  st("VAA is valid for simulation. Opening SafePal for Ethereum redemption…");
 
-  if(!confirm("FINAL REDEMPTION CHECK\n\nRedeem exactly "+E.formatUnits(parsed.amount,dec)+" ETHIX on Ethereum to:\n"+expectedRecipient+"\n\nContinue to SafePal?"))
-    return;
-
-  st("VAA is verified. Opening SafePal for Ethereum redemption…");
   try{
     const hash=await injected.request({
       method:"eth_sendTransaction",
-      params:[{from,to,data,value:"0x0",gas:gasHex,chainId:"0x1"}]
+      params:[{
+        from,
+        to,
+        data,
+        value:"0x0",
+        gas:gasHex,
+        chainId:"0x1"
+      }]
     });
-    $("status").textContent="Ethereum redemption submitted:
-"+hash+"
-Waiting for confirmation…";
+
+    $("status").textContent="Ethereum redemption submitted:\n"+hash+"\nWaiting for confirmation…";
     const receipt=await ethRpc.waitForTransaction(hash,1,180000);
     if(!receipt) throw Error("Transaction was submitted but confirmation was not observed within 3 minutes.");
     if(receipt.status===0) throw Error("Ethereum redemption transaction reverted. Hash: "+hash);
-    st("SUCCESS. 1,530 ETHIX redemption confirmed:
-"+hash);
+
+    st("SUCCESS. Ethereum redemption confirmed:\n"+hash);
   }catch(e){
     throw Error(readableRpcError(e));
   }
 }
-$("amt").addEventListener("input",()=>{if(me)refreshSafety();});
-
-// SafePal recommends handling accountsChanged/chainChanged. Keep this light:
-// reload only the UI state, not the page, so users don't lose form values.
-(async function installWalletListeners(){
-  try{
-    const x=await getInjected();
-    if(!x || typeof x.on!=="function") return;
-    if(typeof x.removeListener==="function"){
-      // We only add these listeners once in this page.
-      x.removeListener("accountsChanged", onAccountsChanged);
-      x.removeListener("chainChanged", onChainChanged);
-    }
-    x.on("accountsChanged", onAccountsChanged);
-    x.on("chainChanged", onChainChanged);
-  }catch(e){}
-})();
-function onAccountsChanged(accounts){
-  if(!accounts||!accounts.length){
-    me=null; s=null;
-    conInfo.textContent="Not connected";
-    appBtn.disabled=true; sendBtn.disabled=true;
-    st("SafePal disconnected.");
-    return;
-  }
-  me=E.getAddress(accounts[0]);
-  conInfo.textContent="Connected: "+me;
-  if(String(window.ethereum?.chainId||"").toLowerCase()===String(C.celo.id).toLowerCase()){
-    refreshSafety().catch(()=>{});
-  }
-}
-function onChainChanged(chainId){
-  if(!me) return;
-  sendBtn.disabled=true;
-  if(String(chainId).toLowerCase()===String(C.celo.id).toLowerCase()){
-    refreshSafety().catch(()=>{});
-  }else{
-    st("Network changed. Select Celo Mainnet before continuing.");
-  }
-}
-
+$("amt").addEventListener("input",()=>{if(me)refreshAllowance();});
 conBtn.onclick=()=>connect().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 appBtn.onclick=()=>approve().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 sendBtn.onclick=()=>send().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
