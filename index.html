@@ -96,7 +96,7 @@ const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), r
 const conInfo=$("wallet"), statusBox=$("status");
 const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
 const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",rpc:"https://ethereum-rpc.publicnode.com",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
-const erc=["function balanceOf(address) view returns(uint256)","function decimals() view returns(uint8)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
+const erc=["function decimals() view returns(uint8)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)","function balanceOf(address) view returns(uint256)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
 const st=x=>{const b=document.getElementById("status");b.textContent=x;b.className="status";
   if(/^SUCCESS|^Connected|^Approval confirmed|^Celo confirmed|^VAA found/.test(x))b.classList.add("ok");
@@ -164,15 +164,14 @@ async function refreshAllowance(){
   try{
     if(!providerInjected()||!me)return;
     await chain(C.celo.id);
-    const rpc=new E.JsonRpcProvider(C.celo.rpc);
-    const t=new E.Contract(C.celo.tok,erc,rpc);
-    const [a,b]=await Promise.all([t.allowance(me,C.celo.wtt),t.balanceOf(me)]);
-    const needed=E.parseUnits($("amt").value||"0",dec);
-    $("allow").textContent=`Allowance: ${E.formatUnits(a,dec)} ETHIX • Balance: ${E.formatUnits(b,dec)} ETHIX`;
-    $("app").disabled=a>=needed;
-    $("send").disabled=!(a>=needed && b>=needed);
-    if(b<needed) st("Safety check: wallet balance is below the requested transfer amount.");
-  }catch(e){ console.error(e); }
+    p=new E.BrowserProvider(await getInjected());
+    let t=new E.Contract(C.celo.tok,erc,p);
+    let a=E.parseUnits($("amt").value||"0",dec);
+    let al=await t.allowance(me,C.celo.wtt);
+    sendBtn.disabled=al<a;
+  }catch(e){
+    sendBtn.disabled=true;
+  }
 }
 async function approve(){
   await chain(C.celo.id);
@@ -190,59 +189,45 @@ async function approve(){
   st("Approval confirmed:\n"+x.hash+"\n\nStart MANUAL WTT is now enabled.");
 }
 async function send(){
-  const to=$("to").value.trim();
-  if(!E.isAddress(to)) throw Error("Invalid recipient address.");
-  const amt=E.parseUnits($("amt").value,dec);
-
   await chain(C.celo.id);
   p=new E.BrowserProvider(await getInjected());
   s=await p.getSigner();
 
-  // Final on-chain balance and allowance checks immediately before signing.
+  const a=E.parseUnits(document.getElementById("amt").value,dec);
+  const to=E.getAddress(document.getElementById("to").value);
+
+  // Final on-chain balance check immediately before signing.
   const rpc=new E.JsonRpcProvider(C.celo.rpc);
   const token=new E.Contract(C.celo.tok,erc,rpc);
-  const [balance,allowance]=await Promise.all([
-    token.balanceOf(me),
-    token.allowance(me,C.celo.wtt)
-  ]);
-  if(balance<amt)
-    throw Error("Transfer blocked: wallet balance "+E.formatUnits(balance,dec)+" ETHIX is below "+E.formatUnits(amt,dec)+" ETHIX.");
-  if(allowance<amt)
-    throw Error("Transfer blocked: allowance "+E.formatUnits(allowance,dec)+" ETHIX is below "+E.formatUnits(amt,dec)+" ETHIX.");
+  const balance=await token.balanceOf(me);
+  const allowance=await token.allowance(me,C.celo.wtt);
+  if(balance<a) throw Error("Transfer blocked: wallet balance is "+E.formatUnits(balance,dec)+" ETHIX, below "+E.formatUnits(a,dec)+" ETHIX.");
+  if(allowance<a) throw Error("Transfer blocked: allowance is "+E.formatUnits(allowance,dec)+" ETHIX, below "+E.formatUnits(a,dec)+" ETHIX.");
 
-  const corec=new E.Contract(C.celo.core,core,s);
-  const fee=await corec.messageFee();
+  const f=await new E.Contract(C.celo.core,core,p).messageFee();
+  const n=crypto.getRandomValues(new Uint32Array(1))[0];
   const w=new E.Contract(C.celo.wtt,wtt,s);
 
-  // Cryptographically secure Wormhole nonce.
-  const nonce=crypto.getRandomValues(new Uint32Array(1))[0];
+  // Simulate the exact transfer before SafePal is asked to sign.
+  await w.transferTokens.staticCall(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});
 
-  // Simulate the exact transfer before asking SafePal to sign.
-  await w.transferTokens.staticCall(
-    C.celo.tok,amt,C.eth.id,E.zeroPadValue(to,32),0,nonce,{value:fee}
-  );
-
-  if(!confirm(
-    "FINAL TRANSFER CHECK
-
-"+
-    "Amount: "+E.formatUnits(amt,dec)+" ETHIX
-"+
-    "Recipient: "+to+"
-
-"+
-    "SafePal will now ask you to sign the Celo transaction. Continue?"
-  )) return;
-
-  const x=await w.transferTokens(
-    C.celo.tok,amt,C.eth.id,E.zeroPadValue(to,32),0,nonce,{value:fee}
-  );
-  $("tx").value=x.hash;
-  st("Celo tx submitted:
-"+x.hash+"
-Waiting…");
+  const x=await w.transferTokens(C.celo.tok,a,2,E.zeroPadValue(to,32),0,n,{value:f});
+  document.getElementById("tx").value=x.hash;
+  st("MANUAL WTT submitted:\n"+x.hash+"\nWaiting for Celo confirmation…");
   await x.wait();
-  st("Celo confirmed. Tap Find signed VAA.");
+  st("Celo confirmed. Now tap Find signed VAA.");
+}
+function b64hex(x){let b=atob(x.replace(/-/g,"+").replace(/_/g,"/")),h="0x";for(let i=0;i<b.length;i++)h+=b.charCodeAt(i).toString(16).padStart(2,"0");return h}
+function seek(o){if(!o||typeof o!=="object")return null;if(typeof o.vaaBytes==="string")return o.vaaBytes;if(Array.isArray(o)){for(let x of o){let r=seek(x);if(r)return r}}else for(let k in o){let r=seek(o[k]);if(r)return r}return null}
+const LOG_MESSAGE_PUBLISHED_TOPIC =
+  "0x6eb224fb001ed210e379b335e35efe88672a8ce935d981a6896b27ffdf52a3b2";
+const CELO_WORMHOLE_CHAIN_ID = 14;
+const WORMHOLESCAN_BASE = "https://api.wormholescan.io";
+
+function normalizeVaa(v){
+  if(!v || typeof v!=="string") return null;
+  if(/^0x[0-9a-fA-F]+$/.test(v)) return v;
+  try{return b64hex(v)}catch(e){return null}
 }
 
 async function getVaaFromCeloReceipt(tx){
