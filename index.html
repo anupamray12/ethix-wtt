@@ -43,7 +43,7 @@ a{color:#aabaff}
   <section class="c">
     <div class="step"><div class="badge">1</div><h3>Connect wallet</h3></div>
     <button id="con">Connect SafePal</button>
-    <div id="wallet" class="small">Not connected</div>
+    <div id="wallet" class="small">Not connected. SafePal DApp browser or SafePal EIP-1193 wallet connection is required.</div>
   </section>
 
   <section class="c">
@@ -189,56 +189,95 @@ async function getInjected(){
   return x;
 }
 async function chain(id){
-  const x=await getInjected();
-  const current=await x.request({method:"eth_chainId"});
-  if(String(current).toLowerCase()===id.toLowerCase()) return;
+  const eth=await getInjected();
+  const target="0x"+Number(id).toString(16);
+  const current=await eth.request({method:"eth_chainId"});
+  if(current.toLowerCase()===target.toLowerCase()) return;
   try{
-    await x.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]});
+    await eth.request({
+      method:"wallet_switchEthereumChain",
+      params:[{chainId:target}]
+    });
   }catch(e){
-    if(e.code===4902 && id==="0xA4EC"){
-      await x.request({method:"wallet_addEthereumChain",params:[{
-        chainId:id,chainName:"Celo Mainnet",
-        nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
-        rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]
-      }]});
-    }else if(e.code===4902 && id==="0x1"){
-      await x.request({method:"wallet_addEthereumChain",params:[{
-        chainId:"0x1",chainName:"Ethereum Mainnet",
-        nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},
-        rpcUrls:[C.eth.rpc],
-        blockExplorerUrls:["https://etherscan.io"]
-      }]});
-    }else{
-      throw Error("SafePal could not switch networks. Please select "+(id==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+" in SafePal and try again. "+(e.message||""));
-    }
+    // Some SafePal versions use a different provider/network UI and may
+    // reject programmatic switching. Surface a clear instruction.
+    throw Error("Please switch SafePal to "+(Number(id)===C.celo.id?"Celo Mainnet":"Ethereum Mainnet")+" and try again.");
   }
-
-  // SafePal emits chainChanged, but some versions return before the provider
-  // is fully ready. Verify the active chain before continuing.
-  for(let i=0;i<10;i++){
-    const now=await x.request({method:"eth_chainId"});
-    if(String(now).toLowerCase()===id.toLowerCase()) return;
-    await new Promise(r=>setTimeout(r,300));
-  }
-  throw Error("SafePal did not switch to the requested network.");
 }
+
+async function getInjected(){
+  const eth=window.ethereum;
+  if(!eth) throw Error("No browser wallet detected. Open this page inside SafePal Wallet's DApp browser, or enable SafePal's browser wallet.");
+
+  // SafePal may expose multiple EIP-1193 providers. Prefer SafePal when its
+  // provider metadata is available, otherwise use the injected provider.
+  if(eth.providers && Array.isArray(eth.providers)){
+    const safe=eth.providers.find(x =>
+      x && (x.isSafePal || x.isSafepal || x.isSAFEWALLET || x.providerInfo?.name==="SafePal")
+    );
+    if(safe) return safe;
+  }
+  return eth;
+}
+
+function providerInjected(){
+  return !!window.ethereum;
+}
+
+async function getAccounts(){
+  const eth=await getInjected();
+  let accounts=await eth.request({method:"eth_accounts"});
+  if(!accounts || !accounts.length){
+    accounts=await eth.request({method:"eth_requestAccounts"});
+  }
+  if(!accounts || !accounts.length) throw Error("Wallet is not connected.");
+  return accounts.map(E.getAddress);
+}
+
 async function connect(){
-  const x=await getInjected();
   try{
-    const accounts=await x.request({method:"eth_requestAccounts"});
-    if(!accounts||!accounts.length) throw Error("SafePal returned no account.");
-    await chain(C.celo.id);
-    p=new E.BrowserProvider(x);
+    const eth=await getInjected();
+    p=new E.BrowserProvider(eth);
+
+    // Explicitly request accounts. SafePal and other mobile wallets commonly
+    // require eth_requestAccounts rather than relying on eth_accounts.
+    const accounts=await eth.request({method:"eth_requestAccounts"});
+    if(!accounts || !accounts.length) throw Error("No wallet account was returned.");
+
     s=await p.getSigner();
-    me=await s.getAddress();
-    dec=await new E.Contract(C.celo.tok,erc,p).decimals();
-    conInfo.textContent="Connected: "+me+" | ETHIX decimals: "+dec;
-    appBtn.disabled=false;
-    sendBtn.disabled=true;
-    st("Connected to SafePal on Celo. Checking ETHIX allowance…");
-    await refreshAllowance();
+    me=E.getAddress(accounts[0]);
+
+    const net=await p.getNetwork();
+    const expected=BigInt(C.celo.id);
+    if(net.chainId!==expected){
+      try{
+        await eth.request({
+          method:"wallet_switchEthereumChain",
+          params:[{chainId:"0x"+C.celo.id.toString(16)}]
+        });
+        p=new E.BrowserProvider(eth);
+        s=await p.getSigner();
+      }catch(e){
+        throw Error("Please switch SafePal to Celo Mainnet, then tap Connect again.");
+      }
+    }
+
+    $("wallet").textContent="Connected: "+me;
+    conBtn.textContent="SafePal Connected";
+    conBtn.disabled=true;
+    appBtn.disabled=true;
+    $("redeem").disabled=true;
+
+    const token=new E.Contract(C.celo.tok,erc,p);
+    dec=Number(await token.decimals());
+
+    await refreshSafety();
+    st("Connected to SafePal on Celo.
+Address: "+me+"
+Ready for the requested transfer amount.");
   }catch(e){
-    conInfo.textContent="Not connected";
+    $("wallet").textContent="Not connected";
+    conBtn.disabled=false;
     throw e;
   }
 }
@@ -470,9 +509,8 @@ async function redeem(){
 
   await chain(C.eth.id);
   const injected=await getInjected();
-  const accounts=await injected.request({method:"eth_accounts"});
-  if(!accounts || !accounts.length) throw Error("SafePal account is not connected.");
-  const from=E.getAddress(accounts[0]);
+  const accounts=await getAccounts();
+  const from=accounts[0];
   const to=C.eth.wtt;
   const iface=new E.Interface(wtt);
   const data=iface.encodeFunctionData("completeTransfer",[v]);
