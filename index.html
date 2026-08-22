@@ -42,7 +42,7 @@ a{color:#aabaff}
 
   <section class="c">
     <div class="step"><div class="badge">1</div><h3>Connect wallet</h3></div>
-    <button id="con">Connect SafePal</button>
+    <button id="con">Connect SafePal Wallet</button>
     <div id="wallet" class="small">Not connected</div>
   </section>
 
@@ -98,7 +98,7 @@ const E=window.ethers;
 const $=id=>document.getElementById(id);
 const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), redeemBtn=$("redeem");
 const conInfo=$("wallet"), statusBox=$("status");
-const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
+const providerInjected=()=>window.safepalProvider||window.ethereum||window.safepal;
 const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",rpc:"https://ethereum-rpc.publicnode.com",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
 const erc=["function decimals() view returns(uint8)","function balanceOf(address) view returns(uint256)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
@@ -160,6 +160,12 @@ async function readCeloState(){
 async function refreshSafety(){
   try{
     if(!me) return;
+    const x=await getInjected();
+    const active=await x.request({method:"eth_chainId"});
+    if(String(active).toLowerCase()!==String(C.celo.id).toLowerCase()){
+      sendBtn.disabled=true;
+      return false;
+    }
     const q=await readCeloState();
     const ok=q.balance>=q.needed && q.allowance>=q.needed;
     setChecks([
@@ -184,62 +190,80 @@ const st=x=>{const b=document.getElementById("status");b.textContent=x;b.classNa
   if(/^SUCCESS|^Connected|^Approval confirmed|^Celo confirmed|^VAA found/.test(x))b.classList.add("ok");
   if(/^ERROR/.test(x))b.classList.add("error");};
 async function getInjected(){
-  const x=providerInjected();
-  if(!x) throw Error("SafePal wallet provider not found. Open this GitHub Pages URL inside SafePal's DApp browser.");
+  // SafePal's official EVM provider is window.safepalProvider.
+  // Use it first; only fall back to another EIP-1193 provider when SafePal's
+  // provider is not exposed (for example, desktop browser extension setups).
+  const x=window.safepalProvider||window.ethereum||window.safepal;
+  if(!x) throw Error("SafePal provider not found. Open this page in SafePal's DApp browser or use the SafePal extension.");
   return x;
 }
 async function chain(id){
   const x=await getInjected();
+  const target=String(id);
   const current=await x.request({method:"eth_chainId"});
-  if(String(current).toLowerCase()===id.toLowerCase()) return;
+  if(String(current).toLowerCase()===target.toLowerCase()) return;
+
   try{
-    await x.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]});
+    await x.request({
+      method:"wallet_switchEthereumChain",
+      params:[{chainId:target}]
+    });
   }catch(e){
-    if(e.code===4902 && id==="0xA4EC"){
-      await x.request({method:"wallet_addEthereumChain",params:[{
-        chainId:id,chainName:"Celo Mainnet",
-        nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
-        rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]
-      }]});
-    }else if(e.code===4902 && id==="0x1"){
-      await x.request({method:"wallet_addEthereumChain",params:[{
-        chainId:"0x1",chainName:"Ethereum Mainnet",
-        nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},
-        rpcUrls:[C.eth.rpc],
-        blockExplorerUrls:["https://etherscan.io"]
-      }]});
-    }else{
-      throw Error("SafePal could not switch networks. Please select "+(id==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+" in SafePal and try again. "+(e.message||""));
-    }
+    throw Error(
+      "Please switch SafePal to "+
+      (target.toLowerCase()==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+
+      " manually, then tap the button again."
+    );
   }
 
-  // SafePal emits chainChanged, but some versions return before the provider
-  // is fully ready. Verify the active chain before continuing.
+  // Confirm the provider really changed networks.
   for(let i=0;i<10;i++){
     const now=await x.request({method:"eth_chainId"});
-    if(String(now).toLowerCase()===id.toLowerCase()) return;
-    await new Promise(r=>setTimeout(r,300));
+    if(String(now).toLowerCase()===target.toLowerCase()) return;
+    await new Promise(r=>setTimeout(r,250));
   }
-  throw Error("SafePal did not switch to the requested network.");
+  throw Error("SafePal did not finish switching networks.");
 }
 async function connect(){
   const x=await getInjected();
+  conBtn.disabled=true;
   try{
+    // This is the exact SafePal-recommended EVM connection request.
     const accounts=await x.request({method:"eth_requestAccounts"});
     if(!accounts||!accounts.length) throw Error("SafePal returned no account.");
-    await chain(C.celo.id);
+
     p=new E.BrowserProvider(x);
     s=await p.getSigner();
-    me=await s.getAddress();
-    dec=await new E.Contract(C.celo.tok,erc,p).decimals();
-    conInfo.textContent="Connected: "+me+" | ETHIX decimals: "+dec;
+    me=E.getAddress(accounts[0]);
+
+    // Read the current chain only; do not force a network switch while
+    // connecting. This avoids breaking SafePal mobile DApp-browser sessions.
+    let chainId=await x.request({method:"eth_chainId"});
+    const token=new E.Contract(C.celo.tok,erc,p);
+    try{ dec=Number(await token.decimals()); }catch(e){ dec=18; }
+
+    conInfo.textContent="Connected: "+me;
     appBtn.disabled=false;
     sendBtn.disabled=true;
-    st("Connected to SafePal on Celo. Checking ETHIX allowance…");
-    await refreshAllowance();
+
+    if(String(chainId).toLowerCase()===String(C.celo.id).toLowerCase()){
+      st("Connected to SafePal. Celo is selected. Checking ETHIX…");
+      await refreshSafety();
+    }else{
+      st("Connected to SafePal: "+me+"
+Please select Celo Mainnet in SafePal before Approve.");
+      setChecks([
+        "✓ SafePal wallet connected",
+        `✓ Address: <span class="mono">${me}</span>`,
+        "⚠ Celo Mainnet is not currently selected",
+        "Switch to Celo Mainnet in SafePal, then continue."
+      ],false);
+    }
   }catch(e){
     conInfo.textContent="Not connected";
     throw e;
+  }finally{
+    conBtn.disabled=false;
   }
 }
 async function refreshAllowance(){
@@ -534,6 +558,46 @@ Waiting for confirmation…";
   }
 }
 $("amt").addEventListener("input",()=>{if(me)refreshSafety();});
+
+// SafePal recommends handling accountsChanged/chainChanged. Keep this light:
+// reload only the UI state, not the page, so users don't lose form values.
+(async function installWalletListeners(){
+  try{
+    const x=await getInjected();
+    if(!x || typeof x.on!=="function") return;
+    if(typeof x.removeListener==="function"){
+      // We only add these listeners once in this page.
+      x.removeListener("accountsChanged", onAccountsChanged);
+      x.removeListener("chainChanged", onChainChanged);
+    }
+    x.on("accountsChanged", onAccountsChanged);
+    x.on("chainChanged", onChainChanged);
+  }catch(e){}
+})();
+function onAccountsChanged(accounts){
+  if(!accounts||!accounts.length){
+    me=null; s=null;
+    conInfo.textContent="Not connected";
+    appBtn.disabled=true; sendBtn.disabled=true;
+    st("SafePal disconnected.");
+    return;
+  }
+  me=E.getAddress(accounts[0]);
+  conInfo.textContent="Connected: "+me;
+  if(String(window.ethereum?.chainId||"").toLowerCase()===String(C.celo.id).toLowerCase()){
+    refreshSafety().catch(()=>{});
+  }
+}
+function onChainChanged(chainId){
+  if(!me) return;
+  sendBtn.disabled=true;
+  if(String(chainId).toLowerCase()===String(C.celo.id).toLowerCase()){
+    refreshSafety().catch(()=>{});
+  }else{
+    st("Network changed. Select Celo Mainnet before continuing.");
+  }
+}
+
 conBtn.onclick=()=>connect().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 appBtn.onclick=()=>approve().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 sendBtn.onclick=()=>send().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
