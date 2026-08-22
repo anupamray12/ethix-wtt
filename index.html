@@ -75,7 +75,7 @@ a{color:#aabaff}
   <section class="c">
     <div class="step"><div class="badge">5</div><h3>Redeem on Ethereum</h3></div>
     <button id="redeem">Redeem manually on Ethereum</button>
-    <div class="small">You need ETH on Ethereum for gas. This page does not use Portal's automatic relay.</div>
+    <div class="small">You need ETH on Ethereum for gas. The page first simulates the VAA, then asks SafePal to submit it directly.</div>
   </section>
 
   <section class="c">
@@ -95,7 +95,7 @@ const $=id=>document.getElementById(id);
 const conBtn=$("con"), appBtn=$("app"), sendBtn=$("send"), vaaBtn=$("vaaBtn"), redeemBtn=$("redeem");
 const conInfo=$("wallet"), statusBox=$("status");
 const providerInjected=()=>window.ethereum||window.safepalProvider||window.safepal;
-const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
+const C={celo:{id:"0xA4EC",rpc:"https://forno.celo.org",exp:"https://celoscan.io",wtt:"0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",core:"0xa321448d90d4e5b0A732867c18eA198e75CAC48E",tok:"0x9995cc8F20Db5896943Afc8eE0ba463259c931ed"},eth:{id:"0x1",rpc:"https://ethereum-rpc.publicnode.com",wtt:"0x3ee18B2214AFF97000D974cf647E7C347E8fa585"}};
 const erc=["function decimals() view returns(uint8)","function allowance(address,address) view returns(uint256)","function approve(address,uint256) returns(bool)"],core=["function messageFee() view returns(uint256)"],wtt=["function transferTokens(address,uint256,uint16,bytes32,uint256,uint32) payable returns(uint64)","function completeTransfer(bytes)"];
 let p,s,me,dec=18;
 const st=x=>{const b=document.getElementById("status");b.textContent=x;b.className="status";
@@ -109,7 +109,7 @@ async function getInjected(){
 async function chain(id){
   const x=await getInjected();
   const current=await x.request({method:"eth_chainId"});
-  if(current.toLowerCase()===id.toLowerCase()) return;
+  if(String(current).toLowerCase()===id.toLowerCase()) return;
   try{
     await x.request({method:"wallet_switchEthereumChain",params:[{chainId:id}]});
   }catch(e){
@@ -119,10 +119,26 @@ async function chain(id){
         nativeCurrency:{name:"CELO",symbol:"CELO",decimals:18},
         rpcUrls:[C.celo.rpc],blockExplorerUrls:[C.celo.exp]
       }]});
+    }else if(e.code===4902 && id==="0x1"){
+      await x.request({method:"wallet_addEthereumChain",params:[{
+        chainId:"0x1",chainName:"Ethereum Mainnet",
+        nativeCurrency:{name:"Ether",symbol:"ETH",decimals:18},
+        rpcUrls:[C.eth.rpc],
+        blockExplorerUrls:["https://etherscan.io"]
+      }]});
     }else{
-      throw Error("SafePal could not switch to Celo. Please select Celo Mainnet in SafePal and tap Connect again. "+(e.message||""));
+      throw Error("SafePal could not switch networks. Please select "+(id==="0x1"?"Ethereum Mainnet":"Celo Mainnet")+" in SafePal and try again. "+(e.message||""));
     }
   }
+
+  // SafePal emits chainChanged, but some versions return before the provider
+  // is fully ready. Verify the active chain before continuing.
+  for(let i=0;i<10;i++){
+    const now=await x.request({method:"eth_chainId"});
+    if(String(now).toLowerCase()===id.toLowerCase()) return;
+    await new Promise(r=>setTimeout(r,300));
+  }
+  throw Error("SafePal did not switch to the requested network.");
 }
 async function connect(){
   const x=await getInjected();
@@ -263,7 +279,76 @@ async function find(){
     $("vaaBtn").disabled=false;
   }
 }
-async function redeem(){let v=document.getElementById("vh").value.trim();if(!/^0x[0-9a-fA-F]+$/.test(v))throw Error("Valid VAA hex required.");await chain(C.eth.id);p=new E.BrowserProvider(await getInjected());s=await p.getSigner();let w=new E.Contract(C.eth.wtt,wtt,s),x=await w.completeTransfer(v);st("Ethereum redemption submitted:\n"+x.hash);await x.wait();st("SUCCESS. Ethereum redemption confirmed:\n"+x.hash);}
+function readableRpcError(e){
+  const parts=[];
+  if(e?.shortMessage) parts.push(e.shortMessage);
+  if(e?.reason) parts.push("Reason: "+e.reason);
+  if(e?.info?.error?.message) parts.push(e.info.error.message);
+  if(e?.error?.message) parts.push(e.error.message);
+  if(e?.data?.message) parts.push(e.data.message);
+  if(e?.message && !parts.includes(e.message)) parts.push(e.message);
+  return parts.join(" | ") || "Unknown RPC error";
+}
+
+async function redeem(){
+  const v=$("vh").value.trim();
+  if(!/^0x[0-9a-fA-F]+$/.test(v) || v.length<100)
+    throw Error("Valid signed VAA hex required.");
+
+  await chain(C.eth.id);
+  const injected=await getInjected();
+  const accounts=await injected.request({method:"eth_accounts"});
+  if(!accounts || !accounts.length) throw Error("SafePal account is not connected.");
+  const from=E.getAddress(accounts[0]);
+  const to=C.eth.wtt;
+  const iface=new E.Interface(wtt);
+  const data=iface.encodeFunctionData("completeTransfer",[v]);
+
+  // Use a normal Ethereum RPC for simulation and gas estimation. This avoids
+  // the SafePal + ethers v6 eth_estimateGas error shown as "could not coalesce error".
+  const ethRpc=new E.JsonRpcProvider(C.eth.rpc);
+  const txReq={from,to,data,value:"0x0"};
+
+  st("Checking the VAA on Ethereum before asking SafePal to sign…");
+  try{
+    await ethRpc.call(txReq);
+  }catch(e){
+    throw Error("Ethereum rejected this VAA during simulation. "+readableRpcError(e));
+  }
+
+  let gas;
+  try{
+    gas=await ethRpc.estimateGas(txReq);
+  }catch(e){
+    throw Error("The VAA is readable, but Ethereum could not estimate redemption gas. "+readableRpcError(e));
+  }
+
+  const gasHex="0x"+gas.toString(16);
+  st("VAA is valid for simulation. Opening SafePal for Ethereum redemption…");
+
+  try{
+    const hash=await injected.request({
+      method:"eth_sendTransaction",
+      params:[{
+        from,
+        to,
+        data,
+        value:"0x0",
+        gas:gasHex,
+        chainId:"0x1"
+      }]
+    });
+
+    $("status").textContent="Ethereum redemption submitted:\n"+hash+"\nWaiting for confirmation…";
+    const receipt=await ethRpc.waitForTransaction(hash,1,180000);
+    if(!receipt) throw Error("Transaction was submitted but confirmation was not observed within 3 minutes.");
+    if(receipt.status===0) throw Error("Ethereum redemption transaction reverted. Hash: "+hash);
+
+    st("SUCCESS. Ethereum redemption confirmed:\n"+hash);
+  }catch(e){
+    throw Error(readableRpcError(e));
+  }
+}
 $("amt").addEventListener("input",()=>{if(me)refreshAllowance();});
 conBtn.onclick=()=>connect().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
 appBtn.onclick=()=>approve().catch(e=>st("ERROR: "+(e.shortMessage||e.message)));
